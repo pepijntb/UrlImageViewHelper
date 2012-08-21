@@ -10,6 +10,7 @@ import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.Hashtable;
 
+import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpGet;
@@ -22,6 +23,7 @@ import android.content.Context;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
+import android.graphics.Bitmap.Config;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
@@ -60,9 +62,21 @@ public final class UrlImageViewHelper {
 
     private static BitmapDrawable loadDrawableFromStream(Context context, InputStream stream) {
         prepareResources(context);
-        final Bitmap bitmap = BitmapFactory.decodeStream(stream);
+		Bitmap bitmap = null;
+        try {
+			bitmap = BitmapFactory.decodeStream(stream);
+		} catch (OutOfMemoryError e) {
+			Log.e(LOGTAG, "Too little memory available");
+		}
+		if(bitmap == null) {
+			//TODO return default bitmap or something
+			//bitmap = BitmapFactory.decodeResource(mResources, R.drawable.icon);
+			bitmap = Bitmap.createBitmap(4, 4, Config.ALPHA_8);
+        }
+		final Bitmap toUse = bitmap;
+
         //Log.i(LOGTAG, String.format("Loaded bitmap (%dx%d).", bitmap.getWidth(), bitmap.getHeight()));
-        return new BitmapDrawable(mResources, bitmap);
+        return new BitmapDrawable(mResources, toUse);
     }
 
     public static final int CACHE_DURATION_INFINITE = Integer.MAX_VALUE;
@@ -78,16 +92,20 @@ public final class UrlImageViewHelper {
         setUrlDrawable(imageView.getContext(), imageView, url, defaultResource, CACHE_DURATION_THREE_DAYS);
     }
 
-    public static void setUrlDrawable(final ImageView imageView, final String url) {
-        setUrlDrawable(imageView.getContext(), imageView, url, null, CACHE_DURATION_THREE_DAYS);
+    public static void setUrlDrawable(final ImageView imageView, final String url, final Header authHeader) {
+        setUrlDrawable(imageView.getContext(), imageView, url, null, CACHE_DURATION_THREE_DAYS, authHeader);
     }
 
+    public static void setUrlDrawable(final ImageView imageView, final String url) {
+        setUrlDrawable(imageView.getContext(), imageView, url, null, CACHE_DURATION_THREE_DAYS, null);
+    }
+    
     public static void loadUrlDrawable(final Context context, final String url) {
-        setUrlDrawable(context, null, url, null, CACHE_DURATION_THREE_DAYS);
+        setUrlDrawable(context, null, url, null, CACHE_DURATION_THREE_DAYS, null);
     }
 
     public static void setUrlDrawable(final ImageView imageView, final String url, Drawable defaultDrawable) {
-        setUrlDrawable(imageView.getContext(), imageView, url, defaultDrawable, CACHE_DURATION_THREE_DAYS);
+        setUrlDrawable(imageView.getContext(), imageView, url, defaultDrawable, CACHE_DURATION_THREE_DAYS, null);
     }
 
     public static void setUrlDrawable(final ImageView imageView, final String url, int defaultResource, long cacheDurationMs) {
@@ -95,18 +113,18 @@ public final class UrlImageViewHelper {
     }
 
     public static void loadUrlDrawable(final Context context, final String url, long cacheDurationMs) {
-        setUrlDrawable(context, null, url, null, cacheDurationMs);
+        setUrlDrawable(context, null, url, null, cacheDurationMs, null);
     }
 
     public static void setUrlDrawable(final ImageView imageView, final String url, Drawable defaultDrawable, long cacheDurationMs) {
-        setUrlDrawable(imageView.getContext(), imageView, url, defaultDrawable, cacheDurationMs);
+        setUrlDrawable(imageView.getContext(), imageView, url, defaultDrawable, cacheDurationMs, null);
     }
 
     private static void setUrlDrawable(final Context context, final ImageView imageView, final String url, int defaultResource, long cacheDurationMs) {
         Drawable d = null;
         if (defaultResource != 0)
             d = imageView.getResources().getDrawable(defaultResource);
-        setUrlDrawable(context, imageView, url, d, cacheDurationMs);
+        setUrlDrawable(context, imageView, url, d, cacheDurationMs, null);
     }
 
     private static boolean isNullOrEmpty(CharSequence s) {
@@ -141,8 +159,8 @@ public final class UrlImageViewHelper {
             e.printStackTrace();
         }
     }
-
-    private static void setUrlDrawable(final Context context, final ImageView imageView, final String url, final Drawable defaultDrawable, long cacheDurationMs) {
+    
+    private static void setUrlDrawable(final Context context, final ImageView imageView, final String url, final Drawable defaultDrawable, long cacheDurationMs, final boolean scaleIfLarger, final Header authHeader) {
         cleanup(context);
         // disassociate this ImageView from any pending downloads
         if (imageView != null)
@@ -220,6 +238,7 @@ public final class UrlImageViewHelper {
                 AndroidHttpClient client = AndroidHttpClient.newInstance(context.getPackageName());
                 try {
                     HttpGet get = new HttpGet(url);
+                    if(authHeader!=null) get.addHeader(authHeader);
                     final HttpParams httpParams = new BasicHttpParams();
                     HttpClientParams.setRedirecting(httpParams, true);
                     get.setParams(httpParams);
@@ -237,7 +256,10 @@ public final class UrlImageViewHelper {
                     fos.close();
                     is.close();
                     FileInputStream  fis = context.openFileInput(filename);
-                    return loadDrawableFromStream(context, fis);
+                    Drawable d = loadDrawableFromStream(context, fis);
+                    if(scaleIfLarger) {
+                    }
+                    return d;
                 }
                 catch (Exception ex) {
 //                    Log.e(LOGTAG, "Exception during Image download of " + url, ex);
@@ -270,6 +292,14 @@ public final class UrlImageViewHelper {
             }
         };
         downloader.execute();
+    }
+
+    /*private static void setUrlDrawable(final Context context, final ImageView imageView, final String url, final Drawable defaultDrawable, long cacheDurationMs) {
+        setUrlDrawable(context, imageView, url, defaultDrawable, cacheDurationMs, false);
+    }*/
+
+    private static void setUrlDrawable(final Context context, final ImageView imageView, final String url, final Drawable defaultDrawable, long cacheDurationMs, Header authHeader) {
+        setUrlDrawable(context, imageView, url, defaultDrawable, cacheDurationMs, false, authHeader);
     }
 
     private static Hashtable<ImageView, String> mPendingViews = new Hashtable<ImageView, String>();
